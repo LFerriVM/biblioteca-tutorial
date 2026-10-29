@@ -3,6 +3,7 @@ import { civilDate } from "../../../../shared/dates";
 import { RuleConflict } from "../../../../shared/errors";
 import type { CatalogIntegration } from "../../domain/CatalogIntegration";
 import { findCopyView } from "../../infrastructure/copies";
+import { invalidateBookList } from "../../infrastructure/listCache";
 
 export async function deleteCopy(id: number, integration: CatalogIntegration): Promise<void> {
   await inTransaction(async (tx) => {
@@ -10,4 +11,5 @@ export async function deleteCopy(id: number, integration: CatalogIntegration): P
     if (await integration.copyHasHistory(tx, id)) throw new RuleConflict("Exemplar possui histórico de reservas ou empréstimos e não pode ser excluído");
     await tx`DELETE FROM exemplares WHERE id = ${id}`;
   });
+  await invalidateBookList();
 }

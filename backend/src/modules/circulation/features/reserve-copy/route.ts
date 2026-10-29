@@ -1,4 +1,5 @@
 import type { Hono } from "hono";
+import { invalidateBookList } from "../../../catalog";
 import { inTransaction } from "../../../../infrastructure/transaction";
 import { today } from "../../../../shared/dates";
 import { InvalidInput } from "../../../../shared/errors";
@@ -17,6 +18,7 @@ export function registerRoutes(api: Hono): void {
     const readerId = parsePositiveId(body["leitorId"], "Leitor");
     const copyId = parsePositiveId(body["exemplarId"], "Exemplar");
     const reservation = await inTransaction(tx => new ReserveCopy(...circulationDependencies(tx)).execute(readerId, copyId));
+    await invalidateBookList();
     return c.json(reservationJson(reservation), 201);
   });
 }

@@ -17,6 +17,9 @@ coverage
 
 # logs
 logs
+# O histórico do segundo cérebro é documentação versionada.
+!docs/brain/logs/
+!docs/brain/logs/**
 _.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 

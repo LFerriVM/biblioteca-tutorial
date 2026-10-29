@@ -2,14 +2,24 @@
 
 Tópicos Especiais em Engenharia de Software II · Ifes 2026.2
 
-A branch `saas-evolution/fase02` parte da `saas-evolution/fase01`, que implementou a
-[aula de PostgreSQL, Docker e React](.docs/saas-evolution/saas-fase01.html)
-e os 23 casos de uso da turma. O monólito modular usa PostgreSQL 18 e uma
-interface React 19 com acervo, autores, leitores, exemplares, reservas e empréstimos.
+A fase 02 implementa a [aula de Redis 8, cache e busca semântica](.docs/saas-evolution/saas-fase02.html)
+sobre o monólito modular da fase 01. PostgreSQL 18 continua sendo a fonte da verdade;
+Redis 8 mantém o cache da busca de autores e o índice vetorial de livros (UC24),
+com embeddings do Gemini e interface React 19.
 
 ## Executar a aplicação
 
-Com Docker Desktop aberto, na raiz do projeto:
+Com Docker Desktop aberto, na raiz do projeto, copie o modelo de configuração:
+
+```bash
+cp infra/.env.example infra/.env
+```
+
+Preencha `GEMINI_API_KEY` em `infra/.env` com sua chave do Google AI Studio para
+habilitar a busca semântica. Esse arquivo é ignorado pelo Git. Sem chave, os cadastros
+e as buscas comuns funcionam; a busca semântica responde HTTP 503.
+
+Suba os serviços:
 
 ```bash
 docker compose -f infra/compose.yaml up -d --build
@@ -18,6 +28,8 @@ docker compose -f infra/compose.yaml up -d --build
 Abra <http://localhost:3000>. O `infra/Dockerfile` compila o frontend, e o backend serve
 a interface e a API no mesmo endereço. O PostgreSQL atende somente na rede do
 Compose, sem publicar a porta 5432. Os dados ficam no volume `pgdata`.
+O Redis também fica na rede interna, sem porta publicada nem volume: seu conteúdo
+é reconstruído a partir do PostgreSQL na conexão inicial e em cada reconexão.
 
 Para parar e preservar os dados:
 
@@ -40,6 +52,8 @@ docker compose -f infra/compose.yaml run --rm --build test
 ```
 
 Os testes de integração usam `biblioteca_test`; a aplicação usa `biblioteca`.
+Os namespaces Redis também são separados por `REDIS_PREFIX`. A suíte usa
+`EMBEDDING_PROVIDER=hash`, determinístico, sem rede nem chave do Gemini.
 Se remover o volume com `docker compose -f infra/compose.yaml down -v`, crie novamente o banco de testes.
 
 As verificações que dispensam PostgreSQL podem rodar localmente com Bun 1.4 ou
@@ -66,7 +80,7 @@ na porta 3000. O menu agrupa as páginas por área:
 
 | Área | Páginas |
 |---|---|
-| Livros | `/livros`, `/livros/cadastrar`, `/livros/editar`, `/livros/excluir`, `/livros/seed` |
+| Livros | `/livros`, `/livros/cadastrar`, `/livros/editar`, `/livros/excluir`, `/livros/seed`, `/livros/semantica` |
 | Autores | `/autores`, `/autores/cadastrar`, `/autores/editar`, `/autores/excluir` |
 | Leitores | `/leitores`, `/leitores/cadastrar`, `/leitores/editar`, `/leitores/excluir` |
 | Exemplares | `/exemplares`, `/exemplares/cadastrar`, `/exemplares/editar`, `/exemplares/excluir` |
@@ -94,6 +108,7 @@ Todas as rotas ficam sob `/api`; `GET /api` identifica a API.
 | Recurso | Consultar | Cadastrar ou agir | Atualizar | Excluir |
 |---|---|---|---|---|
 | Livros | `GET /livros?q=`, `GET /livros/id/:id` | `POST /livros` | `PUT /livros/:id` | `DELETE /livros/:id` |
+| Busca semântica | `GET /busca-semantica/livros?q=` | — | — | — |
 | Autores | `GET /autores?q=`, `GET /autores/:id` | `POST /autores` | `PUT /autores/:id` | `DELETE /autores/:id` |
 | Leitores | `GET /leitores?q=`, `GET /leitores/:id` | `POST /leitores` | `PUT /leitores/:id` | `DELETE /leitores/:id` |
 | Exemplares | `GET /exemplares?q=&livroId=&situacao=`, `GET /exemplares/:id` | `POST /exemplares` | `PUT /exemplares/:id` | `DELETE /exemplares/:id` |
@@ -105,6 +120,37 @@ A busca legada `GET /api/livros/:q` continua disponível. O cadastro de livro
 recebe `isbn`, `titulo` e `autorId`; o de exemplar recebe `livroId`, `localizacao`
 e `estadoConservacao`. Os autores da carga inicial são 1 — Eric Evans,
 2 — Robert C. Martin, 3 — Harper Lee e 4 — Jane Austen.
+
+## Cache e busca semântica
+
+`GET /api/autores?q=` mantém o JSON anterior e informa `X-Cache: MISS`, `HIT`
+ou `BYPASS`. Os resultados têm TTL de 60 segundos por termo (Redis 8 `HSETEX`).
+Escritas de autores ou de livros invalidam a geração do cache após o commit;
+leituras antigas não repovoam a geração atual com contagens desatualizadas.
+
+Em `/livros/semantica`, descreva um tema para buscar por título e autor. A API
+`GET /api/busca-semantica/livros?q=` aceita de 1 a 200 caracteres após trim,
+retorna até 10 livros em ordem de distância cosseno e acrescenta `distancia` ao
+JSON do livro. A tela mostra a similaridade `1 − distancia`. Termos vazios ou
+longos respondem 400; indisponibilidade do Redis ou Gemini responde 503.
+
+O modelo `gemini-embedding-001` usa 768 dimensões. O limiar padrão de relevância
+é `0.38`, configurável por `SEMANTIC_MAX_DISTANCE` em `infra/.env`. Esse limiar
+foi fornecido pelo material da aula; precisa ser reavaliado ao trocar o modelo
+ou enriquecer o texto indexado. Cadastros, edições, exclusões, renomeações de autor
+e seed sincronizam os derivados. Falhas nos derivados não desfazem o commit.
+
+Para observar a recuperação, pare o Redis, faça uma escrita e inicie-o novamente:
+
+```bash
+docker compose -f infra/compose.yaml stop redis
+docker compose -f infra/compose.yaml start redis
+docker compose -f infra/compose.yaml logs app
+```
+
+A reconexão invalida o cache e reconcilia o índice. Execute o seed em
+`/livros/seed` para experimentar o acervo da aula. O log registra as quantidades
+indexadas e removidas; falhas do provedor também são registradas.
 
 ## Estrutura e tutorial original
 
@@ -144,13 +190,13 @@ banco (tabelas, colunas e valores persistidos), as mensagens ao usuário e os co
 backend/src/
 ├── main.ts · seed.ts · import-books.ts   pontos de entrada
 ├── server.ts · composition.ts            app Hono, preparo do banco e descoberta das fatias
-├── infrastructure/                       conexão PostgreSQL e transação
-├── shared/                               erros, validação, HTTP e datas
+├── infrastructure/                       PostgreSQL, transação, Redis e adaptadores de embeddings
+├── shared/                               erros, validação, HTTP, datas e porta Embedder
 ├── integration/                          SQL entre módulos e o seed (UC23)
 └── modules/<módulo>/
     ├── index.ts                          API pública do módulo
     ├── domain/                           regras, tipos e portas, sem SQL
-    ├── infrastructure/                   schema, SQL compartilhado e JSON da API
+    ├── infrastructure/                   schema, SQL compartilhado, derivados Redis e JSON da API
     └── features/<fatia>/                 route.ts + caso de uso + teste
 ```
 
@@ -159,7 +205,8 @@ Os módulos são `catalog` (livros e exemplares), `authorship` (autores), `reade
 cada `features/<fatia>/route.ts`, então adicionar uma fatia não altera nenhum
 registro central. `bun run check-boundaries` barra import entre fatias, import de
 arquivos internos de outro módulo e SQL em tabela de outro módulo. As mesmas
-regras de import valem para o frontend.
+regras de import valem para o frontend. O verificador também confere a propriedade
+das chaves Redis: `autoria:*` pertence à Autoria; `acervo:*`, ao Acervo.
 
 Os testes de cada fatia ficam ao lado dela (`<fatia>.test.ts`); `backend/tests/`
 guarda o suporte compartilhado (importado como `#tests/...`) e os testes que sobem
@@ -168,6 +215,7 @@ a aplicação inteira.
 | UC | Fatia | Rotas |
 |---|---|---|
 | UC01 | `catalog/features/create-book` | `POST /livros` |
+| UC02 | `catalog/features/list-books` | `GET /livros` (sem termo; também aceita `q` vazio) |
 | UC02 | `catalog/features/search-books` | `GET /livros?q=`, `GET /livros/id/:id`, `GET /livros/:q` |
 | UC03 | `catalog/features/update-book` | `PUT /livros/:id` |
 | UC04 | `catalog/features/delete-book` | `DELETE /livros/:id` |
@@ -190,6 +238,16 @@ a aplicação inteira.
 | UC21 | `circulation/features/list-loans` | `GET /emprestimos`, `GET /emprestimos/:id` |
 | UC22 | `circulation/features/list-reservations` | `GET /reservas`, `GET /reservas/:id` |
 | UC23 | `integration/seed` | `GET /seed`, `POST /seed` |
+| UC24 | `catalog/features/semantic-search-books` | `GET /busca-semantica/livros?q=` |
+
+A fatia `list-books` lista o acervo por título e ID e fornece a tela
+`/livros/listar`. Usa o mesmo JSON de `search-books`, com cache Redis de 60 segundos
+por geração e dia civil brasileiro. O cabeçalho `X-Cache` indica `HIT`, `MISS` ou
+`BYPASS`; sem Redis, a leitura segue pelo Postgres. Alterações de livros, nomes de
+autores, criação/exclusão de exemplares e operações de circulação invalidam a
+listagem após o COMMIT. Seed e reconexão também invalidam o cache. Consultas com
+`q` preenchido continuam na busca existente; a listagem não usa embeddings nem
+consulta o índice vetorial.
 
 ## Organização do frontend
 

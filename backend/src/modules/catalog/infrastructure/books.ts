@@ -5,6 +5,12 @@ import type { CatalogDb, CatalogIntegration } from "../domain/CatalogIntegration
 
 export type BookRow = { id: number; isbn: string; title: string; authorId: number; catalogedOn: string };
 
+/** A listagem e a busca vazia compartilham a mesma ordenação e projeção. */
+export async function listBookViews(db: CatalogDb, integration: CatalogIntegration, today: string): Promise<BookView[]> {
+  const rows = await db`SELECT id, isbn, titulo AS title, autor_id AS "authorId", data_catalogacao AS "catalogedOn" FROM livros ORDER BY titulo, id` as BookRow[];
+  return Promise.all(rows.map((row) => toBookView(db, row, integration, today)));
+}
+
 export async function findBook(db: CatalogDb, id: number): Promise<BookRow> {
   const [row] = await db`
     SELECT id, isbn, titulo AS title, autor_id AS "authorId", data_catalogacao AS "catalogedOn"

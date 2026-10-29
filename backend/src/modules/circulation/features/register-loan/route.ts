@@ -1,4 +1,5 @@
 import type { Hono } from "hono";
+import { invalidateBookList } from "../../../catalog";
 import { inTransaction } from "../../../../infrastructure/transaction";
 import { parsePositiveId, readJsonBody } from "../../../../shared/http";
 import { circulationDependencies } from "../../infrastructure/dependencies";
@@ -12,6 +13,7 @@ export function registerRoutes(api: Hono): void {
     const readerId = parsePositiveId(body["leitorId"], "Leitor");
     const copyId = parsePositiveId(body["exemplarId"], "Exemplar");
     const loan = await inTransaction(tx => new RegisterLoan(...circulationDependencies(tx)).execute(readerId, copyId));
+    await invalidateBookList();
     return c.json(loanJson(loan), 201);
   });
 }

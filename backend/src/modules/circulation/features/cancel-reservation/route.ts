@@ -1,4 +1,5 @@
 import type { Hono } from "hono";
+import { invalidateBookList } from "../../../catalog";
 import { inTransaction } from "../../../../infrastructure/transaction";
 import { parsePositiveId } from "../../../../shared/http";
 import { circulationDependencies } from "../../infrastructure/dependencies";
@@ -9,6 +10,8 @@ import { CancelReservation } from "./CancelReservation";
 export function registerRoutes(api: Hono): void {
   api.post("/reservas/:id/cancelamento", async c => {
     const id = parsePositiveId(c.req.param("id"));
-    return c.json(reservationJson(await inTransaction(tx => new CancelReservation(...circulationDependencies(tx)).execute(id))));
+    const reservation = await inTransaction(tx => new CancelReservation(...circulationDependencies(tx)).execute(id));
+    await invalidateBookList();
+    return c.json(reservationJson(reservation));
   });
 }
