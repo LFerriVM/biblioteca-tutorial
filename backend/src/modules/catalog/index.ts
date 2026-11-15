@@ -1,5 +1,4 @@
 export { prepareCatalog } from "./infrastructure/schema";
 export type { CatalogAuthor, CatalogDb, CatalogIntegration, CopyAvailability } from "./domain/CatalogIntegration";
 export { Isbn } from "./domain/Isbn";
-export { reconcileBookIndex } from "./infrastructure/bookIndex";
-export { syncAuthorBookVectors } from "./infrastructure/bookVectors";
+export { reconcileBookVectors, syncAuthorBookVectors } from "./infrastructure/bookVectors";
