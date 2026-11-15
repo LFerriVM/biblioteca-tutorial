@@ -75,3 +75,11 @@ test("UC24: a tabela tem chave estrangeira com CASCADE e índice HNSW de cosseno
   const [idx] = await sql`SELECT indexdef FROM pg_indexes WHERE tablename = 'livros_vetores' AND indexdef ILIKE '%hnsw%'` as { indexdef: string }[];
   expect(idx!.indexdef).toContain("vector_cosine_ops");
 });
+
+test("UC24: excluir o livro remove a linha", async () => {
+  const author = await testAuthor();
+  const book = await createBook(name("Livro"), author.id);
+  expect(await stored(book.id)).toBeDefined();
+  expect((await api("DELETE", `/livros/${book.id}`)).status).toBe(204);
+  expect(await stored(book.id)).toBeUndefined();
+});
