@@ -11,6 +11,7 @@ import type { CatalogIntegration } from "../domain/CatalogIntegration";
  * derivado de `livros` e dos autores: pode ser apagado e reconstruído.
  */
 export type IndexResult = { indexed: number };
+export type KnnHit = { id: number; distance: number };
 
 /** CREATE EXTENSION não aceita parâmetros e é idempotente; o lock evita corrida entre processos. */
 export async function ensureVectorExtension(): Promise<void> {
@@ -146,3 +147,14 @@ export async function syncAuthorBookVectors(authorId: number, integration: Catal
   }
 }
 
+/** Os `limit` livros mais próximos do vetor (distância cosseno), do mais perto para o mais longe. */
+export async function knnSearch(vector: Float32Array, limit: number): Promise<KnnHit[]> {
+  const query = toPgvector(vector);
+  const rows = await sql`
+    SELECT livro_id AS id, embedding <=> ${query}::vector AS distance
+    FROM livros_vetores
+    ORDER BY embedding <=> ${query}::vector
+    LIMIT ${limit}
+  ` as { id: number; distance: number }[];
+  return rows.map((row) => ({ id: row.id, distance: Number(row.distance) }));
+}
